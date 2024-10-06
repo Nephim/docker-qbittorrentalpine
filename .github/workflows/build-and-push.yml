@@ -81,7 +81,7 @@ jobs:
           VERSION: ${{ steps.extract_version.outputs.version }}
           DOCKERHUB_USERNAME: nephim
         run: |
-          docker build -t $DOCKERHUB_USERNAME/qbittorrentvpn:$VERSION .
-          docker push $DOCKERHUB_USERNAME/qbittorrentvpn:$VERSION
-          docker tag $DOCKERHUB_USERNAME/qbittorrentvpn:$VERSION $DOCKERHUB_USERNAME/qbittorrentvpn:latest
-          docker push $DOCKERHUB_USERNAME/qbittorrentvpn:latest
+          docker build -t $DOCKERHUB_USERNAME/qbittorrentalpine:$VERSION .
+          docker push $DOCKERHUB_USERNAME/qbittorrentalpine:$VERSION
+          docker tag $DOCKERHUB_USERNAME/qbittorrentalpine:$VERSION $DOCKERHUB_USERNAME/qbittorrentalpine:latest
+          docker push $DOCKERHUB_USERNAME/qbittorrentalpine:latest
