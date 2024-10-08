@@ -36,18 +36,18 @@ services:
             start_period: 30s
             start_interval: 3s
         ports:
-          - 8080:8080
-          
+            - 8080:8080
+
     qbittorrent:
-        image: test
+        image: nephim/qbittorrentalpine
         network_mode: "service:vpn"
         # The following can be used to ensure the vpn is up and functional before the dependant service is started
         depends_on:
             vpn:
                 condition: service_healthy
         volumes:
-          - /your/path:/downloads  # Maps to QBT_DOWNLOAD_PATH
-          - /your/path:/config  # Maps to QBT_CONFIG_PATH
+            - /your/path:/downloads # Maps to QBT_DOWNLOAD_PATH
+            - /your/path:/config # Maps to QBT_CONFIG_PATH
 
 volumes:
     pia:

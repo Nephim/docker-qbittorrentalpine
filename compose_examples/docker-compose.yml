@@ -1,0 +1,9 @@
+services:
+    qbittorrent:
+        image: nephim/qbittorrentalpine
+        container_name: qbitalpine
+        ports:
+            - 8080:8080
+        volumes:
+            - /your/path:/downloads
+            - /your/path:/config
