@@ -67,7 +67,10 @@ jobs:
         if: env.skip_build != 'true'
         run: |
           FULL_VERSION=${{ env.full_version }}
-          TAG_EXISTS=$(git ls-remote --tags origin refs/tags/$FULL_VERSION | wc -l)
+          
+          # Check if the tag exists in the remote repository
+          TAG_EXISTS=$(git ls-remote --tags origin "$FULL_VERSION" | wc -l)
+
           if [ "$TAG_EXISTS" -gt 0 ]; then
             echo "Tag $FULL_VERSION already exists in this repository. Skipping build."
             echo "skip_build=true" >> "$GITHUB_ENV"
