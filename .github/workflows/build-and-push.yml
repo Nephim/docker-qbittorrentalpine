@@ -110,3 +110,28 @@ jobs:
           FULL_VERSION=${{ env.full_version }}
           git tag $FULL_VERSION
           git push origin $FULL_VERSION
+          
+      - name: Notify on Discord
+        if: env.skip_build != 'true'
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          VERSION=${{ env.version }}
+          FULL_VERSION=${{ env.full_version }}
+          curl -X POST -H "Content-Type: application/json" \
+            -d '{
+                  "content": "**New Docker Image Created!**",
+                  "embeds": [
+                    {
+                      "title": "Docker Image Created",
+                      "description": "A new Docker image has been built and pushed to Docker Hub.",
+                      "color": 3066993,
+                      "fields": [
+                        { "name": "Version", "value": "'"$VERSION"'", "inline": true },
+                        { "name": "Full Version", "value": "'"$FULL_VERSION"'", "inline": true }
+                      ]
+                    }
+                  ]
+                }' \
+            $WEBHOOK_URL
+
