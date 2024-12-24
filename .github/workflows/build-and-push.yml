@@ -68,13 +68,11 @@ jobs:
         run: |
           FULL_VERSION=${{ env.full_version }}
 
-          # Ensure all tags are fetched
-          git fetch --tags
+          # Use GitHub API to check if the tag exists
+          TAG_EXISTS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/tags" | jq -e ".[] | select(.name == \"$FULL_VERSION\")")
 
-          # Check if the tag exists in the remote repository
-          TAG_EXISTS=$(git ls-remote --tags origin "$FULL_VERSION" | wc -l)
-
-          if [ "$TAG_EXISTS" -gt 0 ]; then
+          if [ "$TAG_EXISTS" ]; then
             echo "Tag $FULL_VERSION already exists in this repository. Skipping build."
             echo "skip_build=true" >> "$GITHUB_ENV"
             exit 0
@@ -116,7 +114,7 @@ jobs:
           FULL_VERSION=${{ env.full_version }}
           git tag $FULL_VERSION
           git push origin $FULL_VERSION
-          
+
       - name: Notify on Discord
         if: env.skip_build != 'true'
         env:
@@ -140,4 +138,4 @@ jobs:
                   ]
                 }' \
             $WEBHOOK_URL
-
+            
