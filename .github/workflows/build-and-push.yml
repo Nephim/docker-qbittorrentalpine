@@ -26,6 +26,9 @@ jobs:
 
           echo "Latest release tag: $VERSION"
 
+          # Transform version tag for Docker compatibility
+          VERSION_TAG=$(echo $VERSION | sed 's/-/_/')
+
           # Check if the release is a pre-release
           if [ "$PRERELEASE" == "true" ] || [[ "$VERSION" == *beta* ]] || [[ "$VERSION" == *rc* ]] || [[ "$VERSION" == *alpha* ]]; then
             echo "Pre-release or invalid version detected. Skipping build."
@@ -33,51 +36,47 @@ jobs:
             exit 0
           fi
 
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Check if build was skipped
         if: steps.fetch_release.outputs.skip_build == 'true'
         run: echo "Build was skipped due to pre-release or invalid version."
 
-      - name: Check if release already exists
-        id: check_release
+      - name: Check if Docker image already exists
+        id: check_docker_image
         if: steps.fetch_release.outputs.skip_build != 'true'
+        env:
+          DOCKERHUB_USERNAME: nephim
+          REPO_NAME: qbittorrentalpine
+          VERSION: ${{ steps.fetch_release.outputs.version }}
         run: |
-          REPO_OWNER="Nephim"
-          REPO_NAME="docker-qbittorrentalpine"
-          VERSION=${{ steps.fetch_release.outputs.version }}
-
-          # Check if a GitHub release with this version already exists
-          RELEASE_EXISTS=$(curl -s \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/tags/$VERSION" \
-            -o /dev/null -w "%{http_code}")
-
-          if [ "$RELEASE_EXISTS" -eq 200 ]; then
-            echo "Release with version $VERSION already exists. Skipping build."
+          IMAGE_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" \
+          https://hub.docker.com/v2/repositories/$DOCKERHUB_USERNAME/$REPO_NAME/tags/$VERSION/)
+          if [ "$IMAGE_EXISTS" -eq 200 ]; then
+            echo "Image with version $VERSION already exists. Skipping build."
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
             exit 0
           else
-            echo "No release with version $VERSION found. Proceeding to build."
+            echo "Image with version $VERSION does not exist. Proceeding to build."
           fi
 
       - name: Checkout repository
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_release.outputs.skip_build != 'true'
+        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_docker_image.outputs.skip_build != 'true'
         uses: actions/checkout@v3
 
       - name: Set up Docker Buildx
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_release.outputs.skip_build != 'true'
+        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_docker_image.outputs.skip_build != 'true'
         uses: docker/setup-buildx-action@v2
 
       - name: Log in to Docker Hub
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_release.outputs.skip_build != 'true'
+        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_docker_image.outputs.skip_build != 'true'
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push Docker image
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_release.outputs.skip_build != 'true'
+        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_docker_image.outputs.skip_build != 'true'
         env:
           VERSION: ${{ steps.fetch_release.outputs.version }}
           DOCKERHUB_USERNAME: nephim
@@ -86,14 +85,3 @@ jobs:
           docker push $DOCKERHUB_USERNAME/qbittorrentalpine:$VERSION
           docker tag $DOCKERHUB_USERNAME/qbittorrentalpine:$VERSION $DOCKERHUB_USERNAME/qbittorrentalpine:latest
           docker push $DOCKERHUB_USERNAME/qbittorrentalpine:latest
-
-      - name: Create GitHub release
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_release.outputs.skip_build != 'true'
-        uses: actions/create-release@v1
-        with:
-          tag_name: ${{ steps.fetch_release.outputs.version }}
-          release_name: Release ${{ steps.fetch_release.outputs.version }}
-          body: |
-            Docker image built and pushed for version ${{ steps.fetch_release.outputs.version }}.
-          draft: false
-          prerelease: false
