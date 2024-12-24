@@ -37,11 +37,11 @@ jobs:
             exit 1
           fi
 
-          # Extract the simplified version for Docker image tagging
-          VERSION=$(echo "$FULL_VERSION" | grep -oP '\d+\.\d+\.\d+')
+          # Extract the simplified version for Docker image tagging using underscores
+          VERSION=$(echo "$FULL_VERSION" | awk -F'_' '{print $2}')
 
           if [ -z "$VERSION" ]; then
-            echo "Error: Failed to parse the simplified version from '$FULL_VERSION'."
+            echo "Error: Failed to parse the version from '$FULL_VERSION'."
             exit 1
           fi
 
@@ -51,50 +51,50 @@ jobs:
           # Check if the release is a pre-release
           if [ "$PRERELEASE" == "true" ] || [[ "$FULL_VERSION" == *beta* ]] || [[ "$FULL_VERSION" == *rc* ]] || [[ "$FULL_VERSION" == *alpha* ]]; then
             echo "Pre-release or invalid version detected. Skipping build."
-            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+            echo "skip_build=true" >> "$GITHUB_ENV"
             exit 0
           fi
 
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "full_version=$FULL_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_ENV"
+          echo "full_version=$FULL_VERSION" >> "$GITHUB_ENV"
 
       - name: Check if build was skipped
-        if: steps.fetch_release.outputs.skip_build == 'true'
+        if: env.skip_build == 'true'
         run: echo "Build was skipped due to pre-release or invalid version."
 
       - name: Check if tag already exists in this repository
         id: check_tag
-        if: steps.fetch_release.outputs.skip_build != 'true'
+        if: env.skip_build != 'true'
         run: |
-          FULL_VERSION=${{ steps.fetch_release.outputs.full_version }}
+          FULL_VERSION=${{ env.full_version }}
           TAG_EXISTS=$(git ls-remote --tags origin refs/tags/$FULL_VERSION | wc -l)
           if [ "$TAG_EXISTS" -gt 0 ]; then
             echo "Tag $FULL_VERSION already exists in this repository. Skipping build."
-            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+            echo "skip_build=true" >> "$GITHUB_ENV"
             exit 0
           else
             echo "Tag $FULL_VERSION does not exist. Proceeding to build."
           fi
 
       - name: Checkout repository
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_tag.outputs.skip_build != 'true'
+        if: env.skip_build != 'true'
         uses: actions/checkout@v3
 
       - name: Set up Docker Buildx
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_tag.outputs.skip_build != 'true'
+        if: env.skip_build != 'true'
         uses: docker/setup-buildx-action@v2
 
       - name: Log in to Docker Hub
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_tag.outputs.skip_build != 'true'
+        if: env.skip_build != 'true'
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push Docker image
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_tag.outputs.skip_build != 'true'
+        if: env.skip_build != 'true'
         env:
-          VERSION: ${{ steps.fetch_release.outputs.version }}
+          VERSION: ${{ env.version }}
           DOCKERHUB_USERNAME: nephim
         run: |
           docker build -t $DOCKERHUB_USERNAME/qbittorrentalpine:$VERSION .
@@ -103,10 +103,10 @@ jobs:
           docker push $DOCKERHUB_USERNAME/qbittorrentalpine:latest
 
       - name: Create GitHub tag for this version
-        if: steps.fetch_release.outputs.skip_build != 'true' && steps.check_tag.outputs.skip_build != 'true'
+        if: env.skip_build != 'true'
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          FULL_VERSION=${{ steps.fetch_release.outputs.full_version }}
+          FULL_VERSION=${{ env.full_version }}
           git tag $FULL_VERSION
           git push origin $FULL_VERSION
