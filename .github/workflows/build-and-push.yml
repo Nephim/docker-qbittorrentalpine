@@ -26,18 +26,24 @@ jobs:
             exit 1
           fi
 
-          echo "LATEST_RELEASE: $LATEST_RELEASE"
+          echo "Fetched LATEST_RELEASE: $LATEST_RELEASE" | jq .
 
-          FULL_VERSION=$(echo "$LATEST_RELEASE" | jq -r .tag_name || echo "")
-          PRERELEASE=$(echo "$LATEST_RELEASE" | jq -r .prerelease || echo "")
+          # Extract fields safely with jq and provide defaults
+          FULL_VERSION=$(echo "$LATEST_RELEASE" | jq -r '.tag_name // empty')
+          PRERELEASE=$(echo "$LATEST_RELEASE" | jq -r '.prerelease // false')
 
-          if [ -z "$FULL_VERSION" ] || [ -z "$PRERELEASE" ]; then
-            echo "Error: Failed to extract release information."
+          if [ -z "$FULL_VERSION" ]; then
+            echo "Error: 'tag_name' is missing or empty in the release data."
             exit 1
           fi
 
           # Extract the simplified version for Docker image tagging
           VERSION=$(echo "$FULL_VERSION" | grep -oP '^\d+\.\d+\.\d+')
+
+          if [ -z "$VERSION" ]; then
+            echo "Error: Failed to parse the simplified version from '$FULL_VERSION'."
+            exit 1
+          fi
 
           echo "Latest release tag: $FULL_VERSION"
           echo "Simplified version for Docker: $VERSION"
@@ -51,6 +57,7 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "full_version=$FULL_VERSION" >> "$GITHUB_OUTPUT"
+
 
       - name: Check if build was skipped
         if: steps.fetch_release.outputs.skip_build == 'true'
