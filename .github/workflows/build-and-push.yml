@@ -21,8 +21,20 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
 
-          FULL_VERSION=$(echo "$LATEST_RELEASE" | jq -r .tag_name)
-          PRERELEASE=$(echo "$LATEST_RELEASE" | jq -r .prerelease)
+          if [ -z "$LATEST_RELEASE" ]; then
+            echo "Error: Failed to fetch the latest release."
+            exit 1
+          fi
+
+          echo "LATEST_RELEASE: $LATEST_RELEASE"
+
+          FULL_VERSION=$(echo "$LATEST_RELEASE" | jq -r .tag_name || echo "")
+          PRERELEASE=$(echo "$LATEST_RELEASE" | jq -r .prerelease || echo "")
+
+          if [ -z "$FULL_VERSION" ] || [ -z "$PRERELEASE" ]; then
+            echo "Error: Failed to extract release information."
+            exit 1
+          fi
 
           # Extract the simplified version for Docker image tagging
           VERSION=$(echo "$FULL_VERSION" | grep -oP '^\d+\.\d+\.\d+')
