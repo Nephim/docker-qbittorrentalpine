@@ -37,8 +37,8 @@ jobs:
             exit 1
           fi
 
-          # Extract the simplified version for Docker image tagging using underscores
-          VERSION=$(echo "$FULL_VERSION" | awk -F'_' '{print $2}')
+          # Extract the simplified version for Docker image tagging using delimiter '-' and '_'
+          VERSION=$(echo "$FULL_VERSION" | sed -n 's/release-\([^-_]*\)_.*/\1/p')
 
           if [ -z "$VERSION" ]; then
             echo "Error: Failed to parse the version from '$FULL_VERSION'."
