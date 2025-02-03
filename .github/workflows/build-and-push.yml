@@ -2,7 +2,7 @@ name: Build and Push Docker Image
 
 on:
   schedule:
-    - cron: "41 3 * * *"  # Run daily at midnight
+    - cron: "41 3 * * *"  # Run daily at 03:41 UTC
   workflow_dispatch:  # Allow manual trigger for testing
 
 jobs:
@@ -13,44 +13,45 @@ jobs:
       - name: Fetch latest release version
         id: fetch_release
         run: |
+          set -e
+          trap 'echo "❌ Error: Failed to fetch latest release from GitHub!" && exit 1' ERR
+
           REPO_OWNER="userdocs"
           REPO_NAME="qbittorrent-nox-static"
 
-          # Fetch the latest release using GitHub API
-          LATEST_RELEASE=$(curl -s \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          echo "🔄 Fetching latest release from GitHub..."
+          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
 
-          if [ -z "$LATEST_RELEASE" ]; then
-            echo "Error: Failed to fetch the latest release."
+          if [ -z "$RESPONSE" ]; then
+            echo "❌ Error: GitHub API returned an empty response!"
             exit 1
           fi
 
-          echo "Fetched LATEST_RELEASE: $LATEST_RELEASE"
+          echo "📜 GitHub API Response:"
+          echo "$RESPONSE" | jq  # Print formatted JSON for debugging
 
-          # Parse JSON fields safely
-          FULL_VERSION=$(echo "$LATEST_RELEASE" | jq -r '.tag_name // empty')
-          PRERELEASE=$(echo "$LATEST_RELEASE" | jq -r '.prerelease // false')
+          FULL_VERSION=$(echo "$RESPONSE" | jq -r '.tag_name // empty')
+          PRERELEASE=$(echo "$RESPONSE" | jq -r '.prerelease // false')
 
           if [ -z "$FULL_VERSION" ]; then
-            echo "Error: 'tag_name' is missing or empty in the release data."
+            echo "❌ Error: 'tag_name' is missing in the release data."
             exit 1
           fi
 
-          # Extract the simplified version for Docker image tagging using delimiter '-' and '_'
+          # Extract the simplified version for Docker tagging
           VERSION=$(echo "$FULL_VERSION" | sed -n 's/release-\([^-_]*\)_.*/\1/p')
 
           if [ -z "$VERSION" ]; then
-            echo "Error: Failed to parse the version from '$FULL_VERSION'."
+            echo "❌ Error: Failed to parse version from '$FULL_VERSION'."
             exit 1
           fi
 
-          echo "Latest release tag: $FULL_VERSION"
-          echo "Simplified version for Docker: $VERSION"
+          echo "✅ Latest Release Tag: $FULL_VERSION"
+          echo "✅ Simplified Version: $VERSION"
 
-          # Check if the release is a pre-release
           if [ "$PRERELEASE" == "true" ] || [[ "$FULL_VERSION" == *beta* ]] || [[ "$FULL_VERSION" == *rc* ]] || [[ "$FULL_VERSION" == *alpha* ]]; then
-            echo "Pre-release or invalid version detected. Skipping build."
+            echo "⚠️ Pre-release detected. Skipping build."
             echo "skip_build=true" >> "$GITHUB_ENV"
             exit 0
           fi
@@ -60,24 +61,38 @@ jobs:
 
       - name: Check if build was skipped
         if: env.skip_build == 'true'
-        run: echo "Build was skipped due to pre-release or invalid version."
+        run: echo "🚫 Build was skipped due to pre-release."
 
-      - name: Check if tag already exists in this repository
+      - name: Fetch existing tags from GitHub
+        id: fetch_tags
+        if: env.skip_build != 'true'
+        run: |
+          set -e
+          trap 'echo "❌ Error: Failed to fetch repository tags!" && exit 1' ERR
+
+          echo "🔄 Fetching existing tags from GitHub..."
+          curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/tags" > tags.json
+
+          echo "📜 Available Tags:"
+          cat tags.json | jq -r '.[].name'
+
+      - name: Check if tag already exists
         id: check_tag
         if: env.skip_build != 'true'
         run: |
+          set -e
+          trap 'echo "❌ Error: Failed to check for existing tag!" && exit 1' ERR
+
           FULL_VERSION=${{ env.full_version }}
+          echo "🔍 Checking for existing tag: $FULL_VERSION"
 
-          # Use GitHub API to check if the tag exists
-          TAG_EXISTS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/tags" | jq -e ".[] | select(.name == \"$FULL_VERSION\")")
-
-          if [ "$TAG_EXISTS" ]; then
-            echo "Tag $FULL_VERSION already exists in this repository. Skipping build."
+          if jq -e ".[] | select(.name == \"$FULL_VERSION\")" tags.json > /dev/null; then
+            echo "⚠️ Tag $FULL_VERSION already exists. Skipping build."
             echo "skip_build=true" >> "$GITHUB_ENV"
             exit 0
           else
-            echo "Tag $FULL_VERSION does not exist. Proceeding to build."
+            echo "✅ Tag $FULL_VERSION does not exist. Proceeding to build."
           fi
 
       - name: Checkout repository
@@ -101,33 +116,54 @@ jobs:
           VERSION: ${{ env.version }}
           DOCKERHUB_USERNAME: nephim
         run: |
+          set -e
+          trap 'echo "❌ Error: Docker build or push failed!" && exit 1' ERR
+
+          echo "🚀 Building and pushing Docker image for version $VERSION..."
+
           docker build -t $DOCKERHUB_USERNAME/qbittorrentalpine:$VERSION .
           docker push $DOCKERHUB_USERNAME/qbittorrentalpine:$VERSION
+
           docker tag $DOCKERHUB_USERNAME/qbittorrentalpine:$VERSION $DOCKERHUB_USERNAME/qbittorrentalpine:latest
           docker push $DOCKERHUB_USERNAME/qbittorrentalpine:latest
+
+          echo "✅ Docker image pushed successfully!"
 
       - name: Create GitHub tag for this version
         if: env.skip_build != 'true'
         run: |
+          set -e
+          trap 'echo "❌ Error: Failed to create GitHub tag!" && exit 1' ERR
+
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           FULL_VERSION=${{ env.full_version }}
+
+          echo "🏷️ Creating GitHub tag: $FULL_VERSION"
           git tag $FULL_VERSION
           git push origin $FULL_VERSION
+
+          echo "✅ GitHub tag created successfully!"
 
       - name: Notify on Discord
         if: env.skip_build != 'true'
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
+          set -e
+          trap 'echo "❌ Error: Failed to send Discord notification!" && exit 1' ERR
+
           VERSION=${{ env.version }}
           FULL_VERSION=${{ env.full_version }}
+
+          echo "🔔 Sending Discord notification..."
+
           curl -X POST -H "Content-Type: application/json" \
             -d '{
-                  "content": "**New Docker Image Created!**",
+                  "content": "**📢 New Docker Image Created!**",
                   "embeds": [
                     {
-                      "title": "Docker Image Created",
+                      "title": "🚀 Docker Image Created",
                       "description": "A new Docker image has been built and pushed to Docker Hub.",
                       "color": 3066993,
                       "fields": [
@@ -138,4 +174,5 @@ jobs:
                   ]
                 }' \
             $WEBHOOK_URL
-            
+
+          echo "✅ Discord notification sent!"
